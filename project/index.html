@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClearDeals AI Lead Scoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card {
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <h1 class="text-3xl font-bold text-indigo-700">AI Lead Scoring Dashboard</h1>
+            <p class="text-gray-600">Prioritize high-intent prospects with machine learning</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Input Form -->
+            <div class="card bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">New Lead Input</h2>
+                <form id="leadForm" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-700 mb-2">Phone Number</label>
+                            <input type="text" name="phone_number" class="w-full px-4 py-2 border rounded-md" placeholder="+91-9876543210" required>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 mb-2">Email</label>
+                            <input type="email" name="email" class="w-full px-4 py-2 border rounded-md" placeholder="john@example.com" required>
+                        </div>
+                    </div>
+
+                    <!-- Other fields similarly -->
+                    
+                    <div>
+                        <label class="block text-gray-700 mb-2">Comments</label>
+                        <textarea name="comments" class="w-full px-4 py-2 border rounded-md" rows="3" placeholder="Any specific requirements..."></textarea>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" name="consent" id="consent" class="mr-2" required>
+                        <label for="consent" class="text-gray-700">I consent to data processing</label>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition">
+                        Score Lead
+                    </button>
+                </form>
+            </div>
+
+            <!-- Results Display -->
+            <div class="card bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Scoring Results</h2>
+                <div id="results" class="text-center py-8">
+                    <p class="text-gray-500">Submit a lead to see scoring results</p>
+                </div>
+                <div class="mt-6">
+                    <h3 class="font-medium mb-2">Keyword Impact</h3>
+                    <ul class="text-sm text-gray-600 space-y-1">
+                        <li>+15: "urgent", "urgency"</li>
+                        <li>+10: "asap", "immediately"</li>
+                        <li>-10: "browse", "just looking"</li>
+                        <li>-20: "not interested"</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leads Table -->
+        <div class="card bg-white p-6 rounded-xl shadow-md mt-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Scored Leads</h2>
+                <div>
+                    <label class="mr-2">Sort by:</label>
+                    <select id="sortSelect" class="border rounded-md px-2 py-1">
+                        <option value="reranked_desc">Score (High to Low)</option>
+                        <option value="reranked_asc">Score (Low to High)</option>
+                        <option value="recent">Most Recent</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Initial Score</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reranked Score</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Comments</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leadsTable" class="bg-white divide-y divide-gray-200">
+                        <!-- Dynamically populated -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Score Distribution Chart -->
+        <div class="card bg-white p-6 rounded-xl shadow-md mt-8">
+            <h2 class="text-xl font-semibold mb-4">Score Distribution</h2>
+            <canvas id="scoreChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const leadForm = document.getElementById('leadForm');
+        const resultsDiv = document.getElementById('results');
+        const leadsTable = document.getElementById('leadsTable');
+        const sortSelect = document.getElementById('sortSelect');
+        
+        // API Configuration
+        const API_URL = "https://your-api-url.com"; // Replace with deployed URL
+        
+        // Load leads from localStorage
+        let leads = JSON.parse(localStorage.getItem('leads')) || [];
+        
+        // Initialize chart
+        const ctx = document.getElementById('scoreChart').getContext('2d');
+        const scoreChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['0-20', '21-40', '41-60', '61-80', '81-100'],
+                datasets: [{
+                    label: 'Number of Leads',
+                    backgroundColor: '#4F46E5',
+                    data: [0, 0, 0, 0, 0]
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    title: { display: true, text: 'Lead Score Distribution' }
+                }
+            }
+        });
+        
+        // Form submission handler
+        leadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(leadForm);
+            const leadData = Object.fromEntries(formData.entries());
+            
+            // Convert numeric fields
+            leadData.credit_score = parseInt(leadData.credit_score);
+            leadData.income = parseInt(leadData.income);
+            leadData.prior_inquiries = parseInt(leadData.prior_inquiries);
+            leadData.consent = leadData.consent === 'on';
+            
+            try {
+                const response = await fetch(`${API_URL}/score`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(leadData)
+                });
+                
+                if (!response.ok) throw new Error('API request failed');
+                
+                const result = await response.json();
+                displayResults(result);
+                
+                // Add to local storage and refresh table
+                leads.unshift({
+                    ...leadData,
+                    ...result,
+                    timestamp: new Date().toISOString()
+                });
+                saveLeads();
+                updateLeadsTable();
+                updateChart();
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="text-red-600 bg-red-50 p-4 rounded-md">
+                        <p class="font-medium">Error:</p>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        });
+        
+        // Display scoring results
+        function displayResults(result) {
+            const scoreClass = result.reranked_score > 70 ? 'text-green-600' : 
+                             result.reranked_score > 40 ? 'text-yellow-600' : 'text-red-600';
+            
+            resultsDiv.innerHTML = `
+                <div class="mb-4">
+                    <p class="text-gray-600">Initial Score</p>
+                    <p class="text-2xl font-bold">${result.initial_score}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">AI-Adjusted Score</p>
+                    <p class="text-4xl font-bold ${scoreClass}">${result.reranked_score}</p>
+                </div>
+                <div class="mt-4">
+                    <p class="text-sm text-gray-500">Lead ID: ${result.id}</p>
+                </div>
+            `;
+        }
+        
+        // Update leads table
+        function updateLeadsTable() {
+            const sortedLeads = sortLeads([...leads]);
+            
+            leadsTable.innerHTML = sortedLeads.map(lead => {
+                const scoreClass = lead.reranked_score > 70 ? 'bg-green-100 text-green-800' : 
+                                 lead.reranked_score > 40 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                
+                return `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">${lead.email}</td>
+                        <td class="px-6 py-4">${lead.initial_score}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${scoreClass}">
+                                ${lead.reranked_score}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 max-w-xs truncate">${lead.comments || '-'}</td>
+                        <td class="px-6 py-4">
+                            ${lead.reranked_score > 70 ? 'High Priority' : 
+                             lead.reranked_score > 40 ? 'Medium Priority' : 'Low Priority'}
+                        </td>
+                    </tr>
+                `;
+            }).join('') || `<tr><td colspan="5" class="text-center py-4 text-gray-500">No leads scored yet</td></tr>`;
+        }
+        
+        // Sort leads based on selection
+        function sortLeads(leads) {
+            const sortValue = sortSelect.value;
+            
+            switch(sortValue) {
+                case 'reranked_desc':
+                    return leads.sort((a, b) => b.reranked_score - a.reranked_score);
+                case 'reranked_asc':
+                    return leads.sort((a, b) => a.reranked_score - b.reranked_score);
+                case 'recent':
+                    return leads.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                default:
+                    return leads;
+            }
+        }
+        
+        // Update distribution chart
+        function updateChart() {
+            const distribution = [0, 0, 0, 0, 0];
+            
+            leads.forEach(lead => {
+                if (lead.reranked_score <= 20) distribution[0]++;
+                else if (lead.reranked_score <= 40) distribution[1]++;
+                else if (lead.reranked_score <= 60) distribution[2]++;
+                else if (lead.reranked_score <= 80) distribution[3]++;
+                else distribution[4]++;
+            });
+            
+            scoreChart.data.datasets[0].data = distribution;
+            scoreChart.update();
+        }
+        
+        // Save leads to localStorage
+        function saveLeads() {
+            localStorage.setItem('leads', JSON.stringify(leads));
+        }
+        
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateLeadsTable();
+            updateChart();
+            
+            sortSelect.addEventListener('change', updateLeadsTable);
+        });
+    </script>
+</body>
+</html>
